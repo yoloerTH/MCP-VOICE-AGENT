@@ -100,11 +100,11 @@ app.post('/webhook/n8n-response', async (req, res) => {
     let session = activeSessions.get(sessionId)
     let actualSessionId = sessionId
 
-    // Fallback: If not found, find any session with pending workspace action (single-user scenario)
+    // Fallback: If not found, find any session with pending action (single-user scenario)
     if (!session) {
       console.log('🔍 Session not found by ID, searching for pending action...')
       for (const [id, sess] of activeSessions.entries()) {
-        if (sess.pendingWorkspaceAction) {
+        if (sess.pendingWorkspaceAction || sess.pendingChatRequest) {
           console.log('✅ Found session with pending action:', id)
           session = sess
           actualSessionId = id
@@ -114,10 +114,38 @@ app.post('/webhook/n8n-response', async (req, res) => {
     }
 
     if (!session) {
-      console.warn('⚠️ No session found with pending workspace action')
+      console.warn('⚠️ No session found with pending action')
       console.log('📋 Active sessions:', Array.from(activeSessions.keys()))
       return res.status(404).json({ error: 'Session not found' })
     }
+
+    // Check if this is a chat response (not voice AI workspace action)
+    const isChatResponse = session.pendingChatRequest && !session.pendingWorkspaceAction
+
+    if (isChatResponse) {
+      console.log('💬 Handling chat response')
+      // Send acknowledgment to n8n immediately
+      res.status(200).json({ success: true, message: 'Chat response received' })
+
+      // Get socket for this session
+      const socket = io.sockets.sockets.get(actualSessionId)
+
+      if (!socket) {
+        console.log('ℹ️ Socket disconnected, chat response discarded')
+        session.pendingChatRequest = null
+        return
+      }
+
+      // Send chat response directly to client (no LLM processing)
+      socket.emit('chat-response', { text: summary || result || 'No response from AI' })
+
+      // Clear pending chat request
+      session.pendingChatRequest = null
+      console.log('✅ Chat response sent to client')
+      return
+    }
+
+    // Continue with voice AI workspace action handling below...
 
     // Send acknowledgment to n8n immediately
     res.status(200).json({ success: true, message: 'Response received' })
@@ -512,6 +540,36 @@ io.on('connection', (socket) => {
 
     // Process through LLM (same flow as voice, but skip Deepgram)
     await handleUserMessage(socket, session, message)
+  })
+
+  // Handle chat message (pure chat mode, no LLM)
+  socket.on('chat-message', async ({ text }) => {
+    if (!text || !text.trim()) {
+      console.warn(`⚠️ Received empty chat message from ${socket.id}`)
+      return
+    }
+
+    const message = text.trim()
+    console.log(`💬 Chat message [${socket.id}]: "${message}"`)
+
+    // Update last activity
+    session.lastActivity = Date.now()
+
+    // Store pending chat request (for matching n8n response later)
+    session.pendingChatRequest = {
+      message: message,
+      timestamp: Date.now()
+    }
+
+    try {
+      // Send directly to n8n textchat webhook (no LLM processing)
+      await session.webhook.sendChatMessage(message, socket.id)
+      console.log('✅ Chat message sent to n8n')
+    } catch (error) {
+      console.error('❌ Failed to send chat message:', error)
+      socket.emit('chat-response', { text: 'Sorry, I couldn\'t process your message. Please try again.' })
+      session.pendingChatRequest = null
+    }
   })
 
   // Handle disconnect

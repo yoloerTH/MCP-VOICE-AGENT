@@ -4,8 +4,10 @@ export class WebhookService {
   constructor() {
     this.bookingWebhookUrl = process.env.N8N_WEBHOOK_URL
     this.googleWorkspaceWebhookUrl = process.env.N8N_GOOGLE_WORKSPACE_WEBHOOK_URL || 'https://n8nsaved-production.up.railway.app/webhook/voiceaimcp'
+    this.textChatWebhookUrl = 'https://n8nsaved-production.up.railway.app/webhook/textchat'
 
     console.log('🔗 Google Workspace Webhook URL:', this.googleWorkspaceWebhookUrl)
+    console.log('🔗 Text Chat Webhook URL:', this.textChatWebhookUrl)
 
     if (this.bookingWebhookUrl) {
       console.log('🔗 Booking Webhook URL:', this.bookingWebhookUrl)
@@ -69,6 +71,33 @@ export class WebhookService {
       console.error('❌ Status:', error.response?.status)
       console.error('❌ Response:', error.response?.data)
       throw new Error('Failed to execute Google Workspace action')
+    }
+  }
+
+  async sendChatMessage(message, sessionId) {
+    try {
+      console.log('📤 Sending chat message to n8n:', { sessionId, message })
+
+      const response = await axios.post(this.textChatWebhookUrl, {
+        sessionId: sessionId,
+        message: message,
+        timestamp: new Date().toISOString()
+      }, {
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        timeout: 30000 // 30 seconds timeout
+      })
+
+      console.log('✅ Chat message sent to n8n')
+      return { success: true, data: response.data }
+
+    } catch (error) {
+      console.error('❌ Failed to send chat message:', error.message)
+      console.error('❌ Webhook URL:', this.textChatWebhookUrl)
+      console.error('❌ Status:', error.response?.status)
+      console.error('❌ Response:', error.response?.data)
+      throw new Error('Failed to send chat message')
     }
   }
 }
