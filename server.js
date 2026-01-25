@@ -494,6 +494,26 @@ io.on('connection', (socket) => {
     socket.emit('status', 'Call ended')
   })
 
+  // Handle text message (alternative to voice)
+  socket.on('text-message', async ({ text }) => {
+    if (!text || !text.trim()) {
+      console.warn(`⚠️ Received empty text message from ${socket.id}`)
+      return
+    }
+
+    const message = text.trim()
+    console.log(`💬 Text message [${socket.id}]: "${message}"`)
+
+    // Update last activity
+    session.lastActivity = Date.now()
+
+    // Emit the text back to confirm receipt
+    socket.emit('ai-response', { text: message, partial: false, isUserMessage: true })
+
+    // Process through LLM (same flow as voice, but skip Deepgram)
+    await handleUserMessage(socket, session, message)
+  })
+
   // Handle disconnect
   socket.on('disconnect', () => {
     console.log(`Client disconnected: ${socket.id}`)
