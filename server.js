@@ -87,17 +87,35 @@ app.get('/health', (req, res) => {
 // Webhook receiver for n8n responses (Google Workspace results)
 app.post('/webhook/n8n-response', async (req, res) => {
   try {
-    const { sessionId, result, status, summary } = req.body
+    const { sessionId: rawSessionId, result, status, summary } = req.body
+
+    // Trim sessionId to remove any whitespace
+    const sessionId = rawSessionId?.trim()
 
     console.log('📥 Received n8n response for session:', sessionId)
     console.log('📊 Status:', status)
     console.log('📝 Summary:', summary)
 
-    // Find the session
-    const session = activeSessions.get(sessionId)
+    // Find the session - try exact match first
+    let session = activeSessions.get(sessionId)
+    let actualSessionId = sessionId
+
+    // Fallback: If not found, find any session with pending workspace action (single-user scenario)
+    if (!session) {
+      console.log('🔍 Session not found by ID, searching for pending action...')
+      for (const [id, sess] of activeSessions.entries()) {
+        if (sess.pendingWorkspaceAction) {
+          console.log('✅ Found session with pending action:', id)
+          session = sess
+          actualSessionId = id
+          break
+        }
+      }
+    }
 
     if (!session) {
-      console.warn('⚠️ Session not found:', sessionId)
+      console.warn('⚠️ No session found with pending workspace action')
+      console.log('📋 Active sessions:', Array.from(activeSessions.keys()))
       return res.status(404).json({ error: 'Session not found' })
     }
 
@@ -105,7 +123,7 @@ app.post('/webhook/n8n-response', async (req, res) => {
     res.status(200).json({ success: true, message: 'Response received' })
 
     // Get socket for this session
-    const socket = io.sockets.sockets.get(sessionId)
+    const socket = io.sockets.sockets.get(actualSessionId)
 
     if (!socket) {
       // Socket disconnected but session still alive (grace period)
@@ -114,29 +132,54 @@ app.post('/webhook/n8n-response', async (req, res) => {
 
       // Clear pending action - task is complete even though user left
       session.pendingWorkspaceAction = null
-      console.log('✅ Cleared pendingWorkspaceAction for disconnected session:', sessionId)
+      console.log('✅ Cleared pendingWorkspaceAction for disconnected session:', actualSessionId)
       return
     }
 
-    // Generate natural language response from n8n results
+    // Process n8n response through LLM for natural, concise summary
     let responseText = ''
 
-    if (status === 'success') {
-      responseText = summary || 'All done! I completed that task for you.'
-    } else {
+    if (status === 'success' && summary) {
+      console.log('🤖 Processing n8n response through LLM for natural summary...')
+
+      // Add n8n response to conversation as system message
+      session.conversationHistory.push({
+        role: 'user',
+        content: `[System: The Google Workspace agent completed the task and responded with: "${summary}". Summarize this response naturally and conversationally in 1-2 sentences. Be clear and helpful.]`
+      })
+
+      try {
+        // Get natural summary from LLM
+        const naturalSummary = await session.llm.generateResponse(session.conversationHistory)
+        responseText = naturalSummary
+
+        // Add LLM's natural summary to history
+        session.conversationHistory.push({
+          role: 'assistant',
+          content: responseText
+        })
+      } catch (error) {
+        console.error('❌ Failed to generate natural summary:', error)
+        // Fallback to original summary
+        responseText = summary
+        session.conversationHistory.push({
+          role: 'assistant',
+          content: responseText
+        })
+      }
+    } else if (status === 'error') {
       responseText = 'I ran into an issue completing that task. Could you try again?'
+      session.conversationHistory.push({
+        role: 'assistant',
+        content: responseText
+      })
+    } else {
+      responseText = 'All done! I completed that task for you.'
+      session.conversationHistory.push({
+        role: 'assistant',
+        content: responseText
+      })
     }
-
-    // Add to conversation history
-    session.conversationHistory.push({
-      role: 'user',
-      content: '[System: Task completed]'
-    })
-
-    session.conversationHistory.push({
-      role: 'assistant',
-      content: responseText
-    })
 
     // Send text response
     socket.emit('ai-response', { text: responseText, partial: true })
@@ -154,7 +197,7 @@ app.post('/webhook/n8n-response', async (req, res) => {
 
     // Clear pending action after successful response
     session.pendingWorkspaceAction = null
-    console.log('✅ Cleared pendingWorkspaceAction for session:', sessionId)
+    console.log('✅ Cleared pendingWorkspaceAction for session:', actualSessionId)
 
   } catch (error) {
     console.error('❌ Error handling n8n response:', error)
