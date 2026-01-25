@@ -636,8 +636,8 @@ async function handleUserMessage(socket, session, userMessage, pipeline = null) 
         content: fullResponse
       })
 
-      // Send complete marker
-      socket.emit('ai-response', { text: fullResponse, complete: true })
+      // Don't send complete marker - we already streamed all sentences
+      // Sending it again causes "reanswering" effect on frontend
       socket.emit('status', 'Listening...')
     }
 
