@@ -5,11 +5,11 @@ export class WebhookService {
     this.bookingWebhookUrl = process.env.N8N_WEBHOOK_URL
     this.googleWorkspaceWebhookUrl = process.env.N8N_GOOGLE_WORKSPACE_WEBHOOK_URL || 'https://n8nsaved-production.up.railway.app/webhook/voiceaimcp'
 
-    if (!this.bookingWebhookUrl) {
-      console.warn('N8N_WEBHOOK_URL not configured for bookings')
-    }
-
     console.log('🔗 Google Workspace Webhook URL:', this.googleWorkspaceWebhookUrl)
+
+    if (this.bookingWebhookUrl) {
+      console.log('🔗 Booking Webhook URL:', this.bookingWebhookUrl)
+    }
   }
 
   async sendBooking(bookingData) {

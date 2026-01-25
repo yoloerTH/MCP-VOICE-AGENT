@@ -199,6 +199,7 @@ io.on('connection', (socket) => {
       let aiSpeaking = false
       let currentPipeline = null
       let lastProcessedText = ''  // Track what we've already processed
+      let lastTriggerTime = 0  // Timestamp of last LLM trigger (prevent rapid-fire duplicates)
 
       session.deepgram.onTranscript((data) => {
         const { text, is_final, speech_final, confidence } = data
@@ -228,6 +229,7 @@ io.on('connection', (socket) => {
           isProcessing = false
           transcriptBuffer = text  // Start fresh with new input
           lastProcessedText = ''
+          lastTriggerTime = 0  // Reset cooldown
           return  // Exit early, let next transcript trigger
         }
 
@@ -236,8 +238,22 @@ io.on('connection', (socket) => {
           transcriptBuffer = text
         }
 
-        // Skip if already processing or text already processed
-        if (isProcessing || text === lastProcessedText) {
+        // Skip if already processing
+        if (isProcessing) {
+          return
+        }
+
+        // CRITICAL FIX: Prevent duplicate triggers from rapid consecutive transcripts
+        // Skip if this text was just processed or if we triggered very recently
+        const now = Date.now()
+        const timeSinceLastTrigger = now - lastTriggerTime
+        const isSameText = text === lastProcessedText
+        const isRapidFire = timeSinceLastTrigger < 500  // 500ms cooldown between triggers
+
+        if (isSameText || isRapidFire) {
+          if (isRapidFire && !isSameText) {
+            console.log(`⏸️ Skipping trigger - too soon after last (${timeSinceLastTrigger}ms)`)
+          }
           return
         }
 
@@ -255,6 +271,7 @@ io.on('connection', (socket) => {
           // Lock immediately to prevent concurrent triggers
           isProcessing = true
           lastProcessedText = text
+          lastTriggerTime = now
 
           console.log(`🚀 Triggering LLM (is_final: ${is_final}, conf: ${confidence.toFixed(2)})`)
 
@@ -288,7 +305,7 @@ io.on('connection', (socket) => {
               aiSpeaking = false
               currentPipeline = null
 
-              // Only clear lastProcessedText if not aborted (barge-in)
+              // Clear lastProcessedText after successful completion
               if (!aborted) {
                 lastProcessedText = ''
               }
