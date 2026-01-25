@@ -66,7 +66,7 @@ export class LLMService {
 Your capabilities:
 1. Natural conversation - Answer questions, chat naturally
 2. Google Workspace actions - Access Gmail, Calendar, Drive, Docs, Sheets via intelligent agent
-3. Book appointments and demos
+   - This includes creating calendar events, scheduling meetings, and managing appointments
 
 Speaking style:
 - Start with a short, complete sentence under 10 words
@@ -104,17 +104,17 @@ Complex (confirm first):
 - User: "Schedule a meeting with the team next Tuesday"
   → Say: "Got it, you'd like me to schedule a meeting with the team next Tuesday. Should I go ahead?"
   → Wait for confirmation
-  → Call tool: "Schedule meeting with team next Tuesday"
+  → Call tool with action: "calendar", request: "Create calendar event for team meeting next Tuesday"
+
+- User: "Book a dentist appointment tomorrow at 5pm"
+  → Say: "Just to confirm, you want me to create a calendar event for a dentist appointment tomorrow at 5pm, correct?"
+  → Wait for confirmation
+  → Call tool with action: "calendar", request: "Create calendar event for dentist appointment tomorrow at 5pm"
 
 After confirmation, say: "On it, give me a moment"
 
 DO NOT ask for technical details like email addresses - the MCP agent handles that.
-The MCP agent has full access to Google Workspace and will ask for specifics if needed.
-
-When user wants to book:
-- Collect: name, date/time, what they want
-- Once you have everything, say ONLY: "Hold on, let me register that for you"
-- Then use the book_appointment tool`
+The MCP agent has full access to Google Workspace and will ask for specifics if needed.`
     }
 
     const messages = [systemPrompt, ...conversationHistory]
@@ -125,7 +125,7 @@ When user wants to book:
         type: 'function',
         function: {
           name: 'google_workspace_action',
-          description: 'Performs actions on Google Workspace (Gmail, Calendar, Drive, Docs, Sheets). Use this whenever the user asks to check emails, search drive, view calendar, create documents, or any Google Workspace task.',
+          description: 'Performs actions on Google Workspace (Gmail, Calendar, Drive, Docs, Sheets). Use this for ALL Google Workspace tasks including: reading/sending emails, checking/creating calendar events, searching/creating files, reading/writing documents and spreadsheets.',
           parameters: {
             type: 'object',
             properties: {
@@ -136,35 +136,10 @@ When user wants to book:
               },
               request: {
                 type: 'string',
-                description: 'The user\'s natural language request (e.g., "check my emails from today", "what\'s on my calendar tomorrow", "find files about project X")'
+                description: 'The user\'s natural language request with all details (e.g., "check my emails from today", "create a calendar event tomorrow at 5pm for dentist appointment", "find files about project X", "create a document with meeting notes")'
               }
             },
             required: ['action', 'request']
-          }
-        }
-      },
-      {
-        type: 'function',
-        function: {
-          name: 'book_appointment',
-          description: 'Books an appointment or demo for a customer. Use this when the user wants to schedule, book, or register for something.',
-          parameters: {
-            type: 'object',
-            properties: {
-              name: {
-                type: 'string',
-                description: 'Customer name. Extract from conversation context or ask if not provided.'
-              },
-              datetime: {
-                type: 'string',
-                description: 'The requested date and time in natural language (e.g., "Tomorrow at 3pm", "Next Monday 2pm", "January 15th at 10am")'
-              },
-              details: {
-                type: 'string',
-                description: 'What they want to book (e.g., "Product demo", "Consultation", "Sales call")'
-              }
-            },
-            required: ['datetime', 'details']
           }
         }
       }
