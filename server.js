@@ -31,6 +31,7 @@ const httpServer = createServer(app)
 const corsOptions = {
   origin: function (origin, callback) {
     const allowedOrigins = [
+      'https://googleassistantai.netlify.app',
       'https://voicecallai.netlify.app',
       'https://voiceagent-backend-production-b679.up.railway.app',
       'http://localhost:5173',
@@ -55,6 +56,7 @@ const corsOptions = {
 const io = new Server(httpServer, {
   cors: {
     origin: [
+      'https://googleassistantai.netlify.app',
       'https://voicecallai.netlify.app',
       'https://voiceagent-backend-production-b679.up.railway.app',
       'http://localhost:5173',
