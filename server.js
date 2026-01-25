@@ -189,6 +189,11 @@ io.on('connection', (socket) => {
     console.log(`Call started: ${socket.id}`)
     session.isCallActive = true
 
+    // Reset audio stream state variables for new call
+    audioChunkCount = 0
+    audioBuffer = []
+    deepgramReady = false
+
     try {
       // Initialize Deepgram
       session.deepgram = new DeepgramService()
