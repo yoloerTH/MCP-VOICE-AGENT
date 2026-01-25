@@ -76,6 +76,12 @@ Speaking style:
 
 CRITICAL - Google Workspace Task Handling:
 
+**IMPORTANT: ONE Tool Call Per User Request**
+- NEVER make multiple parallel tool calls
+- If user asks for multiple tasks (e.g., "create a document and email it to John"),
+  combine ALL tasks into ONE clear request message
+- The MCP agent is intelligent and can handle multi-step, complex tasks from a single request
+
 **For SIMPLE queries (reading/checking):**
 - User asks to check/read/search something → Use tool IMMEDIATELY
 - Examples: "What's on my calendar?", "Check my emails", "Find my document"
@@ -86,7 +92,7 @@ CRITICAL - Google Workspace Task Handling:
 - First CONFIRM the request naturally before calling the tool
 - Repeat back what you understood in 1 sentence
 - Wait for user confirmation ("yes", "correct", "that's right")
-- Then call the tool
+- Then call the tool with ALL tasks combined in the request
 
 Examples:
 
@@ -111,10 +117,22 @@ Complex (confirm first):
   → Wait for confirmation
   → Call tool with action: "calendar", request: "Create calendar event for dentist appointment tomorrow at 5pm"
 
+**Multi-step tasks (combine into ONE request):**
+- User: "Create a document about project updates and email it to John"
+  → Say: "Got it, you want me to create a document about project updates and send it to John via email, correct?"
+  → Wait for confirmation
+  → Call tool ONCE with action: "gmail", request: "Create a new document about project updates and email it to John"
+
+- User: "Find my presentation and share it with the team"
+  → Say: "Just to confirm, find your presentation and share it with the team?"
+  → Wait for confirmation
+  → Call tool ONCE with action: "drive", request: "Find user's presentation and share it with the team"
+
 After confirmation, say: "On it, give me a moment"
 
 DO NOT ask for technical details like email addresses - the MCP agent handles that.
-The MCP agent has full access to Google Workspace and will ask for specifics if needed.`
+The MCP agent has full access to Google Workspace and will ask for specifics if needed.
+The MCP agent can handle complex, multi-step tasks from a single clear request.`
     }
 
     const messages = [systemPrompt, ...conversationHistory]
@@ -125,18 +143,18 @@ The MCP agent has full access to Google Workspace and will ask for specifics if 
         type: 'function',
         function: {
           name: 'google_workspace_action',
-          description: 'Performs actions on Google Workspace (Gmail, Calendar, Drive, Docs, Sheets). Use this for ALL Google Workspace tasks including: reading/sending emails, checking/creating calendar events, searching/creating files, reading/writing documents and spreadsheets.',
+          description: 'Performs actions on Google Workspace (Gmail, Calendar, Drive, Docs, Sheets). Use this for ALL Google Workspace tasks. IMPORTANT: Only call this tool ONCE per user request. If the user asks for multiple tasks (e.g., create doc AND email it), combine them into ONE request - the MCP agent can handle multi-step tasks.',
           parameters: {
             type: 'object',
             properties: {
               action: {
                 type: 'string',
-                description: 'The type of action to perform',
+                description: 'The primary type of action to perform (choose the most relevant one if multi-step)',
                 enum: ['gmail', 'calendar', 'drive', 'docs', 'sheets']
               },
               request: {
                 type: 'string',
-                description: 'The user\'s natural language request with all details (e.g., "check my emails from today", "create a calendar event tomorrow at 5pm for dentist appointment", "find files about project X", "create a document with meeting notes")'
+                description: 'The user\'s complete natural language request with ALL details and ALL tasks. Examples: "check my emails from today", "create a calendar event tomorrow at 5pm for dentist appointment", "create a new document about project updates and email it to John", "find my presentation and share it with the team"'
               }
             },
             required: ['action', 'request']
@@ -151,31 +169,40 @@ The MCP agent has full access to Google Workspace and will ask for specifics if 
       max_completion_tokens: 333,
       stream: true,
       tools: tools,
-      tool_choice: 'auto'
+      tool_choice: 'auto',
+      parallel_tool_calls: false  // Disable parallel tool calls - we want ONE request with ALL tasks
     })
 
-    let toolCall = null
-    let toolCallId = null
-    let toolName = null
-    let argsBuffer = ''
+    // Support multiple parallel tool calls
+    const toolCalls = new Map() // Map of index -> { id, name, argsBuffer }
 
     for await (const chunk of stream) {
       const delta = chunk.choices[0]?.delta
       const finishReason = chunk.choices[0]?.finish_reason
 
-      // Handle tool calls
+      // Handle tool calls (can be multiple in parallel)
       if (delta?.tool_calls) {
-        const tc = delta.tool_calls[0]
+        for (const tc of delta.tool_calls) {
+          const index = tc.index ?? 0
 
-        if (tc.id) {
-          toolCallId = tc.id
-          toolName = tc.function?.name
-          console.log('🔧 Tool call starting:', toolName)
-        }
+          // Initialize tool call if this is the first chunk for this index
+          if (tc.id) {
+            toolCalls.set(index, {
+              id: tc.id,
+              name: tc.function?.name,
+              argsBuffer: ''
+            })
+            console.log(`🔧 Tool call starting (index ${index}):`, tc.function?.name)
+          }
 
-        if (tc.function?.arguments) {
-          argsBuffer += tc.function.arguments
-          console.log('🔧 Tool args chunk:', tc.function.arguments)
+          // Append arguments to the appropriate tool call
+          if (tc.function?.arguments) {
+            const toolCall = toolCalls.get(index)
+            if (toolCall) {
+              toolCall.argsBuffer += tc.function.arguments
+              console.log(`🔧 Tool args chunk (index ${index}):`, tc.function.arguments)
+            }
+          }
         }
       }
 
@@ -184,17 +211,19 @@ The MCP agent has full access to Google Workspace and will ask for specifics if 
         yield delta.content
       }
 
-      // Check if we're done and have a tool call
-      if (finishReason === 'tool_calls' && toolCallId) {
-        console.log('🔧 Tool call complete:', toolName, argsBuffer)
-        toolCall = {
-          id: toolCallId,
-          name: toolName,
-          arguments: argsBuffer
-        }
+      // Check if we're done and have tool calls
+      if (finishReason === 'tool_calls' && toolCalls.size > 0) {
+        const completedToolCalls = Array.from(toolCalls.values()).map(tc => ({
+          id: tc.id,
+          name: tc.name,
+          arguments: tc.argsBuffer
+        }))
 
-        // Yield special marker with tool call info
-        yield JSON.stringify({ __tool_call: toolCall })
+        console.log(`🔧 Tool calls complete (${completedToolCalls.length} total):`,
+          completedToolCalls.map(tc => `${tc.name}`).join(', '))
+
+        // Yield all tool calls
+        yield JSON.stringify({ __tool_calls: completedToolCalls })
       } else if (finishReason) {
         console.log('✅ Stream finished with reason:', finishReason)
       }

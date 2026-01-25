@@ -32,7 +32,7 @@ export class CartesiaService {
           output_format: {
             container: 'wav',
             encoding: 'pcm_s16le',
-            sample_rate: 16000
+            sample_rate: 44100  // Changed from 16000 to 44100 for better mobile compatibility
           }
         })
       })

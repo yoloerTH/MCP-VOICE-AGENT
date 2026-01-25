@@ -547,13 +547,21 @@ async function handleUserMessage(socket, session, userMessage, pipeline = null) 
           break
         }
 
-        // Check if this chunk contains a tool call
+        // Check if this chunk contains tool calls (single or multiple)
         if (chunk.includes('__tool_call')) {
           try {
             const toolData = JSON.parse(chunk)
-            if (toolData.__tool_call) {
-              toolCallDetected = toolData.__tool_call
-              console.log('🔧 Tool call detected:', toolCallDetected.name)
+            // Handle new format (multiple tool calls)
+            if (toolData.__tool_calls && Array.isArray(toolData.__tool_calls)) {
+              toolCallDetected = toolData.__tool_calls
+              console.log(`🔧 Tool calls detected (${toolCallDetected.length}):`,
+                toolCallDetected.map(tc => tc.name).join(', '))
+              continue  // Skip this chunk, don't add to response
+            }
+            // Handle old format (single tool call) for backwards compatibility
+            else if (toolData.__tool_call) {
+              toolCallDetected = [toolData.__tool_call]
+              console.log('🔧 Tool call detected:', toolCallDetected[0].name)
               continue  // Skip this chunk, don't add to response
             }
           } catch (e) {
@@ -606,18 +614,25 @@ async function handleUserMessage(socket, session, userMessage, pipeline = null) 
       await ttsWorkerPromise
     }
 
-    // Handle tool call if detected
-    if (toolCallDetected && (!pipeline || !pipeline.isAborted())) {
-      console.log('🔧 Executing tool:', toolCallDetected.name)
+    // Handle tool calls if detected (can be multiple)
+    if (toolCallDetected && Array.isArray(toolCallDetected) && toolCallDetected.length > 0 && (!pipeline || !pipeline.isAborted())) {
+      // For now, only handle the first tool call to avoid parallel execution issues
+      const firstToolCall = toolCallDetected[0]
 
-      if (toolCallDetected.name === 'google_workspace_action') {
+      if (toolCallDetected.length > 1) {
+        console.log(`⚠️ Multiple tool calls detected (${toolCallDetected.length}), executing only the first one for now`)
+      }
+
+      console.log('🔧 Executing tool:', firstToolCall.name)
+
+      if (firstToolCall.name === 'google_workspace_action') {
         try {
-          const args = JSON.parse(toolCallDetected.arguments)
+          const args = JSON.parse(firstToolCall.arguments)
           console.log('📧 Google Workspace action:', args)
 
           // Store pending request (for matching n8n response later)
           session.pendingWorkspaceAction = {
-            toolCallId: toolCallDetected.id,
+            toolCallId: firstToolCall.id,
             args: args,
             timestamp: Date.now()
           }
