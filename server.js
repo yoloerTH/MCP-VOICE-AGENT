@@ -112,10 +112,9 @@ app.post('/webhook/n8n-response', async (req, res) => {
       console.log('ℹ️ Socket disconnected, but session kept alive. Response received after user hung up.')
       console.log('📝 Response summary:', summary)
 
-      // Clear pending action and mark for cleanup
-      if (session.pendingWorkspaceAction) {
-        session.pendingWorkspaceAction = null
-      }
+      // Clear pending action - task is complete even though user left
+      session.pendingWorkspaceAction = null
+      console.log('✅ Cleared pendingWorkspaceAction for disconnected session:', sessionId)
       return
     }
 
@@ -153,10 +152,9 @@ app.post('/webhook/n8n-response', async (req, res) => {
 
     socket.emit('status', 'Listening...')
 
-    // Clear pending action
-    if (session.pendingWorkspaceAction) {
-      session.pendingWorkspaceAction = null
-    }
+    // Clear pending action after successful response
+    session.pendingWorkspaceAction = null
+    console.log('✅ Cleared pendingWorkspaceAction for session:', sessionId)
 
   } catch (error) {
     console.error('❌ Error handling n8n response:', error)
@@ -452,11 +450,13 @@ io.on('connection', (socket) => {
     // Don't immediately delete session if there's a pending workspace action
     // Keep it alive for n8n to send response back
     if (session.pendingWorkspaceAction) {
-      console.log(`⏳ Session has pending workspace action - keeping alive for 60s`)
+      console.log(`⏳ Session ${socket.id} has pending workspace action - keeping alive for 60s`)
+      console.log(`   Action:`, session.pendingWorkspaceAction.args)
       session.disconnectedAt = Date.now()
       // Session will be cleaned up by the interval cleaner after grace period
     } else {
       // No pending actions, safe to delete immediately
+      console.log(`✅ No pending actions for session ${socket.id} - deleting immediately`)
       activeSessions.delete(socket.id)
     }
   })
@@ -561,12 +561,12 @@ async function handleUserMessage(socket, session, userMessage, pipeline = null) 
           console.log('📧 Google Workspace action:', args)
 
           // Store pending request (for matching n8n response later)
-          if (!session.pendingWorkspaceAction) {
-            session.pendingWorkspaceAction = {
-              toolCallId: toolCallDetected.id,
-              args: args
-            }
+          session.pendingWorkspaceAction = {
+            toolCallId: toolCallDetected.id,
+            args: args,
+            timestamp: Date.now()
           }
+          console.log('✅ Set pendingWorkspaceAction for session:', socket.id)
 
           // Generate acknowledgment response
           const acknowledgments = [
