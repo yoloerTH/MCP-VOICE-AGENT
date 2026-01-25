@@ -340,6 +340,19 @@ io.on('connection', (socket) => {
     }
 
     if (session.deepgram && session.isCallActive) {
+      // Decode base64 to Buffer (frontend sends base64-encoded audio)
+      let audioBuffer_decoded
+      try {
+        audioBuffer_decoded = Buffer.from(audioData, 'base64')
+
+        if (audioChunkCount === 1) {
+          console.log(`✅ Decoded audio chunk: ${audioBuffer_decoded.length} bytes`)
+        }
+      } catch (error) {
+        console.error(`❌ Failed to decode audio [${socket.id}]:`, error)
+        return
+      }
+
       // Check if Deepgram WebSocket is actually open (state 1 = OPEN)
       const connectionState = session.deepgram.getReadyState()
 
@@ -351,7 +364,8 @@ io.on('connection', (socket) => {
 
           for (const bufferedAudio of audioBuffer) {
             try {
-              session.deepgram.send(bufferedAudio)
+              const bufferedDecoded = Buffer.from(bufferedAudio, 'base64')
+              session.deepgram.send(bufferedDecoded)
             } catch (error) {
               console.error(`Error sending buffered audio:`, error)
             }
@@ -359,14 +373,14 @@ io.on('connection', (socket) => {
           audioBuffer = []
         }
 
-        // Send current audio chunk
+        // Send current audio chunk (decoded Buffer)
         try {
-          session.deepgram.send(audioData)
+          session.deepgram.send(audioBuffer_decoded)
         } catch (error) {
           console.error(`Error processing audio [${socket.id}]:`, error)
         }
       } else {
-        // Deepgram still connecting (state 0) - buffer the audio
+        // Deepgram still connecting (state 0) - buffer the audio (keep as base64 for now)
         if (audioBuffer.length === 0) {
           console.log(`⏳ Deepgram connecting (state: ${connectionState}), buffering audio...`)
         }
