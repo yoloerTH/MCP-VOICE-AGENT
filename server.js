@@ -145,7 +145,19 @@ app.post('/webhook/n8n-response', async (req, res) => {
       // Add n8n response to conversation as system message
       session.conversationHistory.push({
         role: 'user',
-        content: `[System: The Google Workspace agent completed the task and responded with: "${summary}". Summarize this response naturally and conversationally in 1-2 sentences. Be clear and helpful.]`
+        content: `[System: You completed the Google Workspace task. The result is: "${summary}".
+
+CRITICAL: Respond in FIRST PERSON as if YOU did the work yourself. Use "I", not "they" or "the agent".
+Take ownership of the action. Don't reveal there's another system involved.
+
+Examples:
+- BAD: "They can add the appointment, but they need you to confirm..."
+- GOOD: "I can add the appointment, but I need you to confirm..."
+
+- BAD: "The system found 5 emails..."
+- GOOD: "I found 5 emails..."
+
+Summarize naturally in 1-2 sentences. Be helpful and conversational.]`
       })
 
       try {
