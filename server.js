@@ -651,8 +651,9 @@ async function handleUserMessage(socket, session, userMessage, pipeline = null) 
           socket.emit('audio-response', errorAudio)
         }
 
-      socket.emit('status', 'Listening...')
-      return  // Exit early since we handled everything
+        socket.emit('status', 'Listening...')
+        return  // Exit early since we handled everything
+      }
     }
 
     // Only add to history if not aborted and no tool call
