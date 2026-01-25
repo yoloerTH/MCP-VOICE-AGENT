@@ -108,7 +108,14 @@ app.post('/webhook/n8n-response', async (req, res) => {
     const socket = io.sockets.sockets.get(sessionId)
 
     if (!socket) {
-      console.warn('⚠️ Socket not found for session:', sessionId)
+      // Socket disconnected but session still alive (grace period)
+      console.log('ℹ️ Socket disconnected, but session kept alive. Response received after user hung up.')
+      console.log('📝 Response summary:', summary)
+
+      // Clear pending action and mark for cleanup
+      if (session.pendingWorkspaceAction) {
+        session.pendingWorkspaceAction = null
+      }
       return
     }
 
@@ -442,7 +449,16 @@ io.on('connection', (socket) => {
       session.deepgram.disconnect()
     }
 
-    activeSessions.delete(socket.id)
+    // Don't immediately delete session if there's a pending workspace action
+    // Keep it alive for n8n to send response back
+    if (session.pendingWorkspaceAction) {
+      console.log(`⏳ Session has pending workspace action - keeping alive for 60s`)
+      session.disconnectedAt = Date.now()
+      // Session will be cleaned up by the interval cleaner after grace period
+    } else {
+      // No pending actions, safe to delete immediately
+      activeSessions.delete(socket.id)
+    }
   })
 })
 
@@ -552,20 +568,37 @@ async function handleUserMessage(socket, session, userMessage, pipeline = null) 
             }
           }
 
+          // Generate acknowledgment response
+          const acknowledgments = [
+            "On it, give me a moment.",
+            "Let me check that for you.",
+            "Sure thing, one second.",
+            "Got it, checking now."
+          ]
+          const acknowledgment = acknowledgments[Math.floor(Math.random() * acknowledgments.length)]
+
+          // Send acknowledgment to user
+          socket.emit('ai-response', { text: acknowledgment, partial: true })
+          socket.emit('status', 'Processing your request...')
+
+          // Generate and send audio for acknowledgment
+          try {
+            const ackAudio = await session.cartesia.textToSpeech(acknowledgment)
+            socket.emit('audio-response', ackAudio)
+          } catch (audioError) {
+            console.error('❌ Failed to generate acknowledgment audio:', audioError)
+          }
+
           // Send webhook to n8n (async - don't wait for result)
           session.webhook.sendGoogleWorkspaceAction(args, socket.id)
             .then(() => console.log('✅ Google Workspace action sent to n8n'))
             .catch(err => console.error('❌ Failed to send to n8n:', err))
 
-          // Add tool call to conversation history
+          // Add to conversation history
           session.conversationHistory.push({
             role: 'assistant',
-            content: fullResponse
+            content: acknowledgment
           })
-
-          // Immediately continue conversation - don't wait for n8n
-          // (n8n will send results via webhook later)
-          socket.emit('status', 'Processing your request...')
 
         } catch (error) {
           console.error('❌ Google Workspace action failed:', error)
@@ -700,14 +733,26 @@ async function startTTSWorker(socket, session, ttsQueue, pipeline = null) {
   }
 }
 
-// Cleanup stale sessions every 5 minutes
+// Cleanup stale sessions every minute
 setInterval(() => {
   const now = Date.now()
   let cleanedCount = 0
 
   activeSessions.forEach((session, socketId) => {
-    // If session is inactive for more than 30 minutes, clean it up
-    if (!session.isCallActive && session.lastActivity && (now - session.lastActivity) > 30 * 60 * 1000) {
+    // Clean disconnected sessions after grace period (60 seconds)
+    if (session.disconnectedAt) {
+      const timeSinceDisconnect = now - session.disconnectedAt
+      if (timeSinceDisconnect > 60 * 1000) {
+        console.log(`🧹 Cleaning disconnected session ${socketId} (${Math.round(timeSinceDisconnect / 1000)}s after disconnect)`)
+        if (session.deepgram) {
+          session.deepgram.disconnect()
+        }
+        activeSessions.delete(socketId)
+        cleanedCount++
+      }
+    }
+    // Also clean sessions inactive for more than 30 minutes
+    else if (!session.isCallActive && session.lastActivity && (now - session.lastActivity) > 30 * 60 * 1000) {
       if (session.deepgram) {
         session.deepgram.disconnect()
       }
@@ -719,7 +764,7 @@ setInterval(() => {
   if (cleanedCount > 0) {
     console.log(`🧹 Cleaned up ${cleanedCount} stale sessions`)
   }
-}, 5 * 60 * 1000)
+}, 60 * 1000) // Run every minute instead of every 5 minutes
 
 // Start server
 httpServer.listen(PORT, () => {
