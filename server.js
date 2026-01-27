@@ -708,6 +708,34 @@ async function handleUserMessage(socket, session, userMessage, pipeline = null) 
           const args = JSON.parse(firstToolCall.arguments)
           console.log('📧 Google Workspace action:', args)
 
+          // 🔒 LOCK: Check if there's already a pending workspace action
+          if (session.pendingWorkspaceAction) {
+            const timeSincePending = Date.now() - session.pendingWorkspaceAction.timestamp
+            console.log(`⚠️ Tool call BLOCKED - already have pending action (${Math.round(timeSincePending / 1000)}s ago)`)
+            console.log(`   Pending:`, session.pendingWorkspaceAction.args)
+            console.log(`   Blocked:`, args)
+
+            // Safety: If pending action is older than 30 seconds, consider it stale and allow new one
+            if (timeSincePending > 30 * 1000) {
+              console.log(`⚠️ Pending action is stale (>30s), clearing and allowing new request`)
+              session.pendingWorkspaceAction = null
+            } else {
+              // Block duplicate tool call and inform user
+              const blockMsg = "I'm still working on your previous request. Please give me a moment."
+              socket.emit('ai-response', { text: blockMsg, partial: true })
+
+              try {
+                const blockAudio = await session.cartesia.textToSpeech(blockMsg)
+                socket.emit('audio-response', blockAudio)
+              } catch (audioError) {
+                console.error('❌ Failed to generate block message audio:', audioError)
+              }
+
+              socket.emit('status', 'Listening...')
+              return  // Exit early - do NOT send duplicate request
+            }
+          }
+
           // Store pending request (for matching n8n response later)
           session.pendingWorkspaceAction = {
             toolCallId: firstToolCall.id,
@@ -832,8 +860,20 @@ async function startTTSWorker(socket, session, ttsQueue, pipeline = null) {
 setInterval(() => {
   const now = Date.now()
   let cleanedCount = 0
+  let clearedPendingCount = 0
 
   activeSessions.forEach((session, socketId) => {
+    // Clear stale pending workspace actions (>30 seconds without n8n response)
+    if (session.pendingWorkspaceAction) {
+      const timeSincePending = now - session.pendingWorkspaceAction.timestamp
+      if (timeSincePending > 30 * 1000) {
+        console.log(`🧹 Clearing stale pendingWorkspaceAction for ${socketId} (${Math.round(timeSincePending / 1000)}s old)`)
+        console.log(`   Stale action:`, session.pendingWorkspaceAction.args)
+        session.pendingWorkspaceAction = null
+        clearedPendingCount++
+      }
+    }
+
     // Clean disconnected sessions after grace period (60 seconds)
     if (session.disconnectedAt) {
       const timeSinceDisconnect = now - session.disconnectedAt
@@ -858,6 +898,9 @@ setInterval(() => {
 
   if (cleanedCount > 0) {
     console.log(`🧹 Cleaned up ${cleanedCount} stale sessions`)
+  }
+  if (clearedPendingCount > 0) {
+    console.log(`🧹 Cleared ${clearedPendingCount} stale pending workspace actions`)
   }
 }, 60 * 1000) // Run every minute instead of every 5 minutes
 
