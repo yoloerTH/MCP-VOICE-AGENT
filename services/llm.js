@@ -21,7 +21,7 @@ export class LLMService {
     }
 
     this.client = new OpenAI({ apiKey })
-    this.model = process.env.OPENAI_MODEL || 'gpt-5.1-chat-latest'
+    this.model = process.env.OPENAI_MODEL || 'gpt-4.1-mini'
   }
 
   initGemini() {
