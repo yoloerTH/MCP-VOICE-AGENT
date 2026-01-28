@@ -250,13 +250,17 @@ const activeSessions = new Map()
 
 // Socket.io connection handler
 io.on('connection', (socket) => {
-  console.log(`Client connected: ${socket.id}`)
+  // Extract userId from auth handshake
+  const userId = socket.handshake.auth?.userId || null
+
+  console.log(`Client connected: ${socket.id}, User: ${userId || 'anonymous'}`)
 
   // Initialize services for this session
   let session
   try {
     session = {
       id: socket.id,
+      userId: userId,  // Store authenticated user ID
       conversationHistory: [],
       deepgram: null,
       llm: new LLMService(),
@@ -577,7 +581,7 @@ io.on('connection', (socket) => {
 
     try {
       // Send directly to n8n textchat webhook (no LLM processing)
-      await session.webhook.sendChatMessage(message, socket.id)
+      await session.webhook.sendChatMessage(message, session.userId || socket.id)
       console.log('✅ Chat message sent to n8n')
     } catch (error) {
       console.error('❌ Failed to send chat message:', error)
@@ -780,7 +784,7 @@ async function handleUserMessage(socket, session, userMessage, pipeline = null) 
           }
 
           // Send webhook to n8n (async - don't wait for result)
-          session.webhook.sendGoogleWorkspaceAction(args, socket.id)
+          session.webhook.sendGoogleWorkspaceAction(args, session.userId || socket.id)
             .then(() => console.log('✅ Google Workspace action sent to n8n'))
             .catch(err => console.error('❌ Failed to send to n8n:', err))
 

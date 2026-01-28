@@ -51,7 +51,8 @@ export class WebhookService {
       console.log('📤 Sending Google Workspace action to n8n:', actionData)
 
       const response = await axios.post(this.googleWorkspaceWebhookUrl, {
-        sessionId: sessionId,
+        sessionId: sessionId,  // Keep for backward compatibility
+        userId: sessionId,     // Explicit userId field (will be Supabase UUID when authenticated)
         action: actionData.action,
         request: actionData.request,
         timestamp: new Date().toISOString()
@@ -79,7 +80,8 @@ export class WebhookService {
       console.log('📤 Sending chat message to n8n:', { sessionId, message })
 
       const response = await axios.post(this.textChatWebhookUrl, {
-        sessionId: sessionId,
+        sessionId: sessionId,  // Keep for backward compatibility
+        userId: sessionId,     // Explicit userId field (will be Supabase UUID when authenticated)
         message: message,
         timestamp: new Date().toISOString()
       }, {
