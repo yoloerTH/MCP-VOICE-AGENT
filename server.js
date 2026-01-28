@@ -340,11 +340,25 @@ io.on('connection', (socket) => {
         // Skip if this text was just processed or if we triggered very recently
         const now = Date.now()
         const timeSinceLastTrigger = now - lastTriggerTime
-        const isSameText = text === lastProcessedText
+
+        // Normalize text for comparison (remove trailing punctuation variations)
+        const normalizeText = (str) => {
+          return str
+            .trim()
+            .replace(/\.{3,}$/g, '.')  // Replace trailing "..." with single "."
+            .replace(/[.!?]+$/g, '')   // Remove all trailing punctuation
+            .toLowerCase()
+        }
+
+        const normalizedText = normalizeText(text)
+        const normalizedLast = normalizeText(lastProcessedText)
+        const isSameText = normalizedText === normalizedLast
         const isRapidFire = timeSinceLastTrigger < 500  // 500ms cooldown between triggers
 
         if (isSameText || isRapidFire) {
-          if (isRapidFire && !isSameText) {
+          if (isSameText) {
+            console.log(`⏭️ Skipping duplicate transcript (already processed: "${lastProcessedText}")`)
+          } else if (isRapidFire && !isSameText) {
             console.log(`⏸️ Skipping trigger - too soon after last (${timeSinceLastTrigger}ms)`)
           }
           return
