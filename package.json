@@ -9,6 +9,7 @@
   "dependencies": {
     "@deepgram/sdk": "^4.11.3",
     "@google/generative-ai": "^0.21.0",
+    "@supabase/supabase-js": "^2.93.3",
     "axios": "^1.6.5",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
