@@ -256,7 +256,7 @@ Summarize naturally in 1-2 sentences. Be helpful and conversational.]`
 const activeSessions = new Map()
 
 // Socket.io connection handler
-io.on('connection', (socket) => {
+io.on('connection', async (socket) => {
   // Extract userId from auth handshake
   const userId = socket.handshake.auth?.userId || null
 
