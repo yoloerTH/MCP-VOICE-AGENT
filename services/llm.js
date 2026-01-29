@@ -48,9 +48,9 @@ export class LLMService {
   }
 
   // Stream responses for real-time generation
-  async *streamResponse(conversationHistory) {
+  async *streamResponse(conversationHistory, userContext = null) {
     if (this.provider === 'openai') {
-      yield* this.streamOpenAIResponse(conversationHistory)
+      yield* this.streamOpenAIResponse(conversationHistory, userContext)
     } else if (this.provider === 'gemini') {
       // Fallback to non-streaming for Gemini
       const response = await this.generateGeminiResponse(conversationHistory)

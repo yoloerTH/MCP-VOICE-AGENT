@@ -4,6 +4,7 @@ import { Server } from 'socket.io'
 import cors from 'cors'
 import dotenv from 'dotenv'
 import { readFileSync, existsSync } from 'fs'
+import { createClient } from '@supabase/supabase-js'
 import { DeepgramService } from './services/deepgram.js'
 import { LLMService } from './services/llm.js'
 import { CartesiaService } from './services/cartesia.js'
@@ -12,6 +13,12 @@ import { AsyncQueue } from './utils/async-queue.js'
 import { SentenceDetector } from './utils/sentence-detector.js'
 
 dotenv.config()
+
+// Initialize Supabase client
+const supabase = createClient(
+  process.env.VITE_SUPABASE_URL,
+  process.env.VITE_SUPABASE_ANON_KEY
+)
 
 // Load pre-recorded greeting if exists (check for .wav or .mp3)
 let prerecordedGreeting = null
@@ -267,9 +274,24 @@ io.on('connection', (socket) => {
       cartesia: new CartesiaService(),
       webhook: new WebhookService(),
       isCallActive: false,
-      lastActivity: Date.now()
+      lastActivity: Date.now(),
+      personalization: null  // Will be populated below
     }
     activeSessions.set(socket.id, session)
+
+    // Fetch user personalization if userId exists
+    if (userId) {
+      const { data, error } = await supabase
+        .from('user_personalization')
+        .select('preferred_name, communication_style')
+        .eq('user_id', userId)
+        .maybeSingle()
+
+      if (!error && data) {
+        session.personalization = data
+        console.log(`✅ Personalization loaded for user ${userId}:`, data.preferred_name || 'N/A', '/', data.communication_style || 'N/A')
+      }
+    }
   } catch (error) {
     console.error(`Error initializing session [${socket.id}]:`, error)
     socket.emit('error', { message: 'Server configuration error. Please contact administrator.' })
@@ -636,7 +658,7 @@ async function handleUserMessage(socket, session, userMessage, pipeline = null) 
     try {
       // Stream LLM tokens (never blocks on TTS)
       console.log('🚀 Starting LLM stream...')
-      for await (const chunk of session.llm.streamResponse(session.conversationHistory)) {
+      for await (const chunk of session.llm.streamResponse(session.conversationHistory, session.personalization)) {
         // Check if pipeline was aborted (barge-in)
         if (pipeline && pipeline.isAborted()) {
           console.log('⚠️ Pipeline aborted during LLM streaming')
