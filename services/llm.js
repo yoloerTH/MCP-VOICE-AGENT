@@ -58,7 +58,25 @@ export class LLMService {
     }
   }
 
-  async *streamOpenAIResponse(conversationHistory) {
+  async *streamOpenAIResponse(conversationHistory, userContext = null) {
+    // Build user context section if available
+    let userContextSection = ''
+    if (userContext?.preferred_name || userContext?.communication_style) {
+      userContextSection = '\n\nUser Profile:\n'
+      if (userContext.preferred_name) {
+        userContextSection += `- Call them: ${userContext.preferred_name}\n`
+      }
+      if (userContext.communication_style) {
+        const styleMap = {
+          formal: 'professional and structured',
+          casual: 'friendly and conversational',
+          concise: 'brief and to the point',
+          detailed: 'thorough with context'
+        }
+        userContextSection += `- Speak: ${styleMap[userContext.communication_style] || 'naturally'}\n`
+      }
+    }
+
     const systemPrompt = {
       role: 'system',
       content: `You are Tessa, a voice assistant with access to Google Workspace.
@@ -67,7 +85,7 @@ Your capabilities:
 1. Natural conversation - Answer questions, chat naturally
 2. Google Workspace actions - Access Gmail, Calendar, Drive, Docs, Sheets via intelligent agent
    - This includes creating calendar events, scheduling meetings, and managing appointments
-
+${userContextSection}
 Speaking style:
 - Start with a short, complete sentence under 10 words
 - Keep sentences brief and natural when spoken aloud
