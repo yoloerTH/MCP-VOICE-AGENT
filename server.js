@@ -379,7 +379,7 @@ io.on('connection', async (socket) => {
         const normalizedText = normalizeText(text)
         const normalizedLast = normalizeText(lastProcessedText)
         const isSameText = normalizedText === normalizedLast
-        const isRapidFire = timeSinceLastTrigger < 500  // 500ms cooldown between triggers
+        const isRapidFire = timeSinceLastTrigger < 1000  // 1 second cooldown between triggers
 
         if (isSameText || isRapidFire) {
           if (isSameText) {
@@ -438,9 +438,12 @@ io.on('connection', async (socket) => {
               aiSpeaking = false
               currentPipeline = null
 
-              // Clear lastProcessedText after successful completion
+              // Keep lastProcessedText for 2 seconds to catch late-arriving final transcripts
+              // This prevents duplicate processing of interim → final transcript pairs
               if (!aborted) {
-                lastProcessedText = ''
+                setTimeout(() => {
+                  lastProcessedText = ''
+                }, 2000)
               }
             })
         }
@@ -458,7 +461,7 @@ io.on('connection', async (socket) => {
       socket.emit('status', 'Connected - Start speaking!')
 
       // Send initial greeting
-      const greetingText = "Hey there! I'm Tessa from Apex Solutions. I'm here to help you learn about our AI automation platform. What can I help you with today?"
+      const greetingText = "Hey there! I'm Naurra, your AI workspace assistant. I'm here to help you manage your Google Workspace with intelligent voice and chat commands. What can I help you with today?"
       session.conversationHistory.push({ role: 'assistant', content: greetingText })
       socket.emit('ai-response', { text: greetingText })
 
