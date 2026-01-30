@@ -38,6 +38,8 @@ const httpServer = createServer(app)
 const corsOptions = {
   origin: function (origin, callback) {
     const allowedOrigins = [
+      'https://naurra.ai',
+      'https://www.naurra.ai',
       'https://googleassistantai.netlify.app',
       'https://voicecallai.netlify.app',
       'https://voiceagent-backend-production-b679.up.railway.app',
