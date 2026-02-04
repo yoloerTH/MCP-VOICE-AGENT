@@ -458,7 +458,15 @@ io.on('connection', async (socket) => {
       })
 
       // Start Deepgram connection
-      await session.deepgram.connect()
+      // Start Deepgram connection with format options if provided (for mobile PCM)
+      const audioFormat = socket.handshake.query?.audioFormat
+      const deepgramOptions = audioFormat === 'pcm' ? {
+        encoding: socket.handshake.query?.encoding || 'linear16',
+        sample_rate: parseInt(socket.handshake.query?.sampleRate) || 16000,
+        channels: parseInt(socket.handshake.query?.channels) || 1
+      } : {}
+      console.log('🎙️ Audio format:', audioFormat || 'auto-detect', deepgramOptions)
+      await session.deepgram.connect(deepgramOptions)
 
       socket.emit('status', 'Connected - Start speaking!')
 

@@ -14,20 +14,27 @@ export class DeepgramService {
     this.audioSent = false
   }
 
-  async connect() {
+  async connect(options = {}) {
     try {
       console.log('Connecting to Deepgram...')
 
-      // Create live transcription connection - let Deepgram auto-detect format
-      this.connection = this.client.listen.live({
+      // Create live transcription connection with explicit encoding for mobile apps
+      const config = {
         model: 'nova-3',
         language: 'en',
         punctuate: true,
         smart_format: true,
         vad_events: true,
         interim_results: true,
-        endpointing: 300  // ms of silence before finalizing
-      })
+        endpointing: 300,  // ms of silence before finalizing
+        ...(options.encoding && {
+          encoding: options.encoding,
+          sample_rate: options.sample_rate || 16000,
+          channels: options.channels || 1
+        })
+      }
+
+      this.connection = this.client.listen.live(config)
 
       // Setup event handlers
       this.connection.on(LiveTranscriptionEvents.Open, () => {
