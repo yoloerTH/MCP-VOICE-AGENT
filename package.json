@@ -2,6 +2,9 @@
   "name": "voice-ai-backend",
   "version": "1.0.0",
   "type": "module",
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "scripts": {
     "dev": "node --watch server.js",
     "start": "node server.js"
@@ -16,6 +19,7 @@
     "express": "^4.21.2",
     "node-fetch": "^3.3.2",
     "openai": "^4.76.1",
-    "socket.io": "^4.7.4"
+    "socket.io": "^4.7.4",
+    "stripe": "^20.3.0"
   }
 }

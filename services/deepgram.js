@@ -12,6 +12,7 @@ export class DeepgramService {
     this.transcriptCallback = null
     this.errorCallback = null
     this.audioSent = false
+    this.keepAliveInterval = null
   }
 
   async connect(options = {}) {
@@ -26,7 +27,7 @@ export class DeepgramService {
         smart_format: true,
         vad_events: true,
         interim_results: true,
-        endpointing: 300,  // ms of silence before finalizing
+        endpointing: 500,  // ms of silence before finalizing (300 was too aggressive)
         ...(options.encoding && {
           encoding: options.encoding,
           sample_rate: options.sample_rate || 16000,
@@ -39,6 +40,18 @@ export class DeepgramService {
       // Setup event handlers
       this.connection.on(LiveTranscriptionEvents.Open, () => {
         console.log('✅ Deepgram connection opened successfully')
+
+        // Send keepAlive every 8 seconds to prevent Deepgram from closing
+        // the WebSocket during silence (e.g. while TTS is playing)
+        this.keepAliveInterval = setInterval(() => {
+          try {
+            if (this.connection && this.connection.getReadyState() === 1) {
+              this.connection.keepAlive()
+            }
+          } catch (err) {
+            console.warn('⚠️ Deepgram keepAlive failed:', err.message)
+          }
+        }, 8000)
       })
 
       this.connection.on(LiveTranscriptionEvents.Transcript, (data) => {
@@ -135,6 +148,10 @@ export class DeepgramService {
 
   disconnect() {
     try {
+      if (this.keepAliveInterval) {
+        clearInterval(this.keepAliveInterval)
+        this.keepAliveInterval = null
+      }
       if (this.connection) {
         console.log('Disconnecting from Deepgram...')
         this.connection.finish()
