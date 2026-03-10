@@ -321,6 +321,16 @@ io.on('connection', async (socket) => {
       let currentPipeline = null
       let lastProcessedText = ''  // Track what we've already processed
       let lastTriggerTime = 0  // Timestamp of last LLM trigger (prevent rapid-fire duplicates)
+      let lastResponseEndTime = 0  // When the AI last finished speaking
+
+      // Normalize text for comparison (remove trailing punctuation variations)
+      const normalizeText = (str) => {
+        return str
+          .trim()
+          .replace(/\.{3,}$/g, '.')  // Replace trailing "..." with single "."
+          .replace(/[.!?]+$/g, '')   // Remove all trailing punctuation
+          .toLowerCase()
+      }
 
       session.deepgram.onTranscript((data) => {
         const { text, is_final, speech_final, confidence } = data
@@ -351,6 +361,7 @@ io.on('connection', async (socket) => {
           transcriptBuffer = text  // Start fresh with new input
           lastProcessedText = ''
           lastTriggerTime = 0  // Reset cooldown
+          lastResponseEndTime = 0
           return  // Exit early, let next transcript trigger
         }
 
@@ -364,30 +375,33 @@ io.on('connection', async (socket) => {
           return
         }
 
-        // CRITICAL FIX: Prevent duplicate triggers from rapid consecutive transcripts
-        // Skip if this text was just processed or if we triggered very recently
         const now = Date.now()
         const timeSinceLastTrigger = now - lastTriggerTime
+        const timeSinceResponseEnd = now - lastResponseEndTime
 
-        // Normalize text for comparison (remove trailing punctuation variations)
-        const normalizeText = (str) => {
-          return str
-            .trim()
-            .replace(/\.{3,}$/g, '.')  // Replace trailing "..." with single "."
-            .replace(/[.!?]+$/g, '')   // Remove all trailing punctuation
-            .toLowerCase()
-        }
-
+        // Duplicate detection: check if this text matches or contains what we already processed
         const normalizedText = normalizeText(text)
         const normalizedLast = normalizeText(lastProcessedText)
-        const isSameText = normalizedText === normalizedLast
-        const isRapidFire = timeSinceLastTrigger < 1000  // 1 second cooldown between triggers
+        const isSameText = normalizedLast.length > 0 && (
+          normalizedText === normalizedLast ||
+          normalizedLast.includes(normalizedText) ||
+          normalizedText.includes(normalizedLast)
+        )
 
-        if (isSameText || isRapidFire) {
+        // Block triggers if:
+        // 1. Same/similar text as already processed
+        // 2. Less than 2s since last trigger (rapid-fire)
+        // 3. Less than 1.5s since AI finished speaking (echo/tail protection)
+        const isRapidFire = timeSinceLastTrigger < 2000
+        const isTooSoonAfterResponse = timeSinceResponseEnd < 1500
+
+        if (isSameText || isRapidFire || isTooSoonAfterResponse) {
           if (isSameText) {
-            console.log(`⏭️ Skipping duplicate transcript (already processed: "${lastProcessedText}")`)
-          } else if (isRapidFire && !isSameText) {
+            console.log(`⏭️ Skipping duplicate transcript (already processed)`)
+          } else if (isRapidFire) {
             console.log(`⏸️ Skipping trigger - too soon after last (${timeSinceLastTrigger}ms)`)
+          } else if (isTooSoonAfterResponse) {
+            console.log(`⏸️ Skipping trigger - too soon after AI response (${timeSinceResponseEnd}ms)`)
           }
           return
         }
@@ -439,13 +453,13 @@ io.on('connection', async (socket) => {
               isProcessing = false
               aiSpeaking = false
               currentPipeline = null
+              lastResponseEndTime = Date.now()
 
-              // Keep lastProcessedText for 2 seconds to catch late-arriving final transcripts
-              // This prevents duplicate processing of interim → final transcript pairs
+              // Clear lastProcessedText after 8 seconds so user can repeat a question if needed
               if (!aborted) {
                 setTimeout(() => {
                   lastProcessedText = ''
-                }, 2000)
+                }, 8000)
               }
             })
         }
