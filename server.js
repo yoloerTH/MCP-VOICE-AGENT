@@ -322,6 +322,48 @@ io.on('connection', async (socket) => {
       let lastProcessedText = ''  // Track what we've already processed
       let lastTriggerTime = 0  // Timestamp of last LLM trigger (prevent rapid-fire duplicates)
       let lastResponseEndTime = 0  // When the AI last finished speaking
+      if (session.silenceTimer) clearTimeout(session.silenceTimer)
+      let silenceTimer = null  // Timer for silence nudge
+      let silenceNudgeCount = 0  // Track nudges for rotating messages
+
+      // Silence nudge: say something if no user speech and AI isn't speaking
+      const silenceNudges = [
+        "I'm still here if you need anything.",
+        "Feel free to ask me anything about your workspace.",
+        "Need help with emails, calendar, or documents? Just say the word.",
+        "I'm listening whenever you're ready.",
+        "Just say something and I'll help you out.",
+        "Still here! What can I do for you?",
+        "I'm ready when you are.",
+        "Let me know if you need anything.",
+      ]
+
+      const resetSilenceTimer = () => {
+        if (silenceTimer) clearTimeout(silenceTimer)
+        silenceTimer = setTimeout(async () => {
+          session.silenceTimer = null
+          // Only nudge if call is active, not processing, and AI isn't speaking
+          if (!session.isCallActive || isProcessing || aiSpeaking) return
+
+          const nudge = silenceNudges[silenceNudgeCount % silenceNudges.length]
+          silenceNudgeCount++
+          console.log(`💬 Silence nudge [${socket.id}]: "${nudge}"`)
+
+          socket.emit('ai-response', { text: nudge, partial: true })
+          session.conversationHistory.push({ role: 'assistant', content: nudge })
+
+          try {
+            const audio = await session.cartesia.textToSpeech(nudge)
+            socket.emit('audio-response', audio)
+          } catch (err) {
+            console.error('❌ Silence nudge TTS error:', err.message)
+          }
+
+          // Set another timer for a second nudge (longer wait)
+          resetSilenceTimer()
+        }, 8000) // 8s of silence triggers a nudge, every time
+        session.silenceTimer = silenceTimer
+      }
 
       // Normalize text for comparison (remove trailing punctuation variations)
       const normalizeText = (str) => {
@@ -334,6 +376,9 @@ io.on('connection', async (socket) => {
 
       session.deepgram.onTranscript((data) => {
         const { text, is_final, speech_final, confidence } = data
+
+        // Reset silence timer on any speech
+        resetSilenceTimer()
 
         // Log interim vs final
         if (!is_final) {
@@ -454,6 +499,7 @@ io.on('connection', async (socket) => {
               aiSpeaking = false
               currentPipeline = null
               lastResponseEndTime = Date.now()
+              resetSilenceTimer()
 
               // Clear lastProcessedText after 8 seconds so user can repeat a question if needed
               if (!aborted) {
@@ -498,6 +544,9 @@ io.on('connection', async (socket) => {
         const greetingAudio = await session.cartesia.textToSpeech(greetingText)
         socket.emit('audio-response', greetingAudio)
       }
+
+      // Start silence timer after greeting
+      resetSilenceTimer()
 
     } catch (error) {
       console.error(`Error starting call [${socket.id}]:`, error)
@@ -580,6 +629,11 @@ io.on('connection', async (socket) => {
     console.log(`Call ended: ${socket.id}`)
     session.isCallActive = false
     session.lastActivity = Date.now()
+
+    if (session.silenceTimer) {
+      clearTimeout(session.silenceTimer)
+      session.silenceTimer = null
+    }
 
     if (session.deepgram) {
       session.deepgram.disconnect()
