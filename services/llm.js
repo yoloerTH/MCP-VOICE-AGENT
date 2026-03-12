@@ -5,13 +5,28 @@ export class LLMService {
   constructor() {
     this.provider = process.env.LLM_PROVIDER || 'openai'
 
-    if (this.provider === 'openai') {
+    if (this.provider === 'grok') {
+      this.initGrok()
+    } else if (this.provider === 'openai') {
       this.initOpenAI()
     } else if (this.provider === 'gemini') {
       this.initGemini()
     } else {
       throw new Error(`Unsupported LLM provider: ${this.provider}`)
     }
+  }
+
+  initGrok() {
+    const apiKey = process.env.XAI_API_KEY
+    if (!apiKey) {
+      throw new Error('XAI_API_KEY is not set')
+    }
+
+    this.client = new OpenAI({
+      apiKey,
+      baseURL: 'https://api.x.ai/v1'
+    })
+    this.model = process.env.XAI_MODEL || 'grok-4-1-fast-non-reasoning'
   }
 
   initOpenAI() {
@@ -36,7 +51,7 @@ export class LLMService {
 
   async generateResponse(conversationHistory, streaming = false) {
     try {
-      if (this.provider === 'openai') {
+      if (this.provider === 'grok' || this.provider === 'openai') {
         return await this.generateOpenAIResponse(conversationHistory, streaming)
       } else if (this.provider === 'gemini') {
         return await this.generateGeminiResponse(conversationHistory)
@@ -49,7 +64,7 @@ export class LLMService {
 
   // Stream responses for real-time generation
   async *streamResponse(conversationHistory, userContext = null) {
-    if (this.provider === 'openai') {
+    if (this.provider === 'grok' || this.provider === 'openai') {
       yield* this.streamOpenAIResponse(conversationHistory, userContext)
     } else if (this.provider === 'gemini') {
       // Fallback to non-streaming for Gemini
