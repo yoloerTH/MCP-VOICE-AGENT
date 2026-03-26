@@ -109,12 +109,12 @@ app.post('/webhook/n8n-response', async (req, res) => {
     let session = activeSessions.get(sessionId)
     let actualSessionId = sessionId
 
-    // Fallback: If not found by exact ID, find any active session (single-user scenario)
+    // Fallback: If not found, find any session with pending action (single-user scenario)
     if (!session) {
-      console.log('🔍 Session not found by ID, searching active sessions...')
+      console.log('🔍 Session not found by ID, searching for pending action...')
       for (const [id, sess] of activeSessions.entries()) {
-        if (sess.pendingWorkspaceAction || sess.pendingChatRequest || sess.lastActivity) {
-          console.log('✅ Found active session:', id)
+        if (sess.pendingWorkspaceAction || sess.pendingChatRequest) {
+          console.log('✅ Found session with pending action:', id)
           session = sess
           actualSessionId = id
           break
