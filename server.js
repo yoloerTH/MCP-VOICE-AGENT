@@ -684,7 +684,8 @@ io.on('connection', async (socket) => {
 
     try {
       // Send directly to n8n textchat webhook (no LLM processing)
-      await session.webhook.sendChatMessage(message, session.userId || socket.id)
+      // socket.id = session routing key, session.userId = Supabase UUID for MCP auth
+      await session.webhook.sendChatMessage(message, socket.id, session.userId || socket.id)
       console.log('✅ Chat message sent to n8n')
     } catch (error) {
       console.error('❌ Failed to send chat message:', error)
