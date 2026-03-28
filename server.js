@@ -325,17 +325,25 @@ io.on('connection', async (socket) => {
       let silenceTimer = null  // Timer for silence nudge
       let silenceNudgeCount = 0  // Track nudges for rotating messages
 
-      // Silence nudge: say something if no user speech and AI isn't speaking
-      const silenceNudges = [
-        "I'm still here if you need anything.",
-        "Feel free to ask me anything about your workspace.",
-        "Need help with emails, calendar, or documents? Just say the word.",
-        "I'm listening whenever you're ready.",
-        "Just say something and I'll help you out.",
-        "Still here! What can I do for you?",
-        "I'm ready when you are.",
-        "Let me know if you need anything.",
-      ]
+      // Silence nudge: generate a context-relevant prompt if user goes quiet
+      const generateSilenceNudge = async () => {
+        try {
+          const history = session.conversationHistory || []
+          const nudgeMessages = [
+            {
+              role: 'system',
+              content: `You are Naurra, an AI voice assistant for Google Workspace. The user has been silent for a while during a live voice call. Generate a SHORT (1 sentence, max 15 words) natural follow-up based on the conversation so far. If there was a recent topic, gently reference it. If the conversation just started or has no context, suggest something helpful they could do. Sound warm and human — never robotic. Do NOT use phrases like "I'm still here" or "feel free to ask". Just output the sentence, nothing else.`
+            },
+            ...history.slice(-6),
+            { role: 'user', content: '[silence]' }
+          ]
+          const response = await session.llm.generateResponse(nudgeMessages)
+          return response?.trim() || "So, what are we working on?"
+        } catch (err) {
+          console.error('❌ Silence nudge LLM error:', err.message)
+          return "So, what are we working on?"
+        }
+      }
 
       const resetSilenceTimer = () => {
         if (silenceTimer) clearTimeout(silenceTimer)
@@ -344,7 +352,7 @@ io.on('connection', async (socket) => {
           // Only nudge if call is active, not processing, and AI isn't speaking
           if (!session.isCallActive || isProcessing || aiSpeaking) return
 
-          const nudge = silenceNudges[silenceNudgeCount % silenceNudges.length]
+          const nudge = await generateSilenceNudge()
           silenceNudgeCount++
           console.log(`💬 Silence nudge [${socket.id}]: "${nudge}"`)
 
@@ -360,7 +368,7 @@ io.on('connection', async (socket) => {
 
           // Set another timer for a second nudge (longer wait)
           resetSilenceTimer()
-        }, 8000) // 8s of silence triggers a nudge, every time
+        }, 16000) // 16s of silence triggers a nudge
         session.silenceTimer = silenceTimer
       }
 
