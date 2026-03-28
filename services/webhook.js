@@ -75,14 +75,15 @@ export class WebhookService {
     }
   }
 
-  async sendChatMessage(message, socketId, userId) {
+  async sendChatMessage(message, socketId, userId, history = []) {
     try {
-      console.log('📤 Sending chat message to n8n:', { socketId, userId, message })
+      console.log('📤 Sending chat message to n8n:', { socketId, userId, message, historyLength: history.length })
 
       const response = await axios.post(this.textChatWebhookUrl, {
         sessionId: socketId,   // Socket ID for routing responses back
         userId: userId,        // Supabase UUID for MCP tool authentication
         message: message,
+        chatHistory: history,  // Array of { role: 'user'|'assistant', content: string }
         timestamp: new Date().toISOString()
       }, {
         headers: {

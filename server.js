@@ -663,7 +663,7 @@ io.on('connection', async (socket) => {
   })
 
   // Handle chat message (pure chat mode, no LLM)
-  socket.on('chat-message', async ({ text }) => {
+  socket.on('chat-message', async ({ text, history }) => {
     if (!text || !text.trim()) {
       console.warn(`⚠️ Received empty chat message from ${socket.id}`)
       return
@@ -684,7 +684,7 @@ io.on('connection', async (socket) => {
     try {
       // Send directly to n8n textchat webhook (no LLM processing)
       // socket.id = session routing key, session.userId = Supabase UUID for MCP auth
-      await session.webhook.sendChatMessage(message, socket.id, session.userId || socket.id)
+      await session.webhook.sendChatMessage(message, socket.id, session.userId || socket.id, history || [])
       console.log('✅ Chat message sent to n8n')
     } catch (error) {
       console.error('❌ Failed to send chat message:', error)
