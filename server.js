@@ -165,10 +165,8 @@ app.post('/webhook/n8n-response', async (req, res) => {
       // Socket disconnected but session still alive (grace period)
       console.log('ℹ️ Socket disconnected, but session kept alive. Response received after user hung up.')
       console.log('📝 Response summary:', summary)
-
-      // Clear pending action - task is complete even though user left
-      session.pendingWorkspaceAction = null
-      console.log('✅ Cleared pendingWorkspaceAction for disconnected session:', actualSessionId)
+      // Don't clear pendingWorkspaceAction — more responses may follow.
+      // Periodic cleanup timer handles stale sessions.
       return
     }
 
@@ -243,9 +241,10 @@ Summarize naturally in 1-2 sentences. Be helpful and conversational.]`
 
     socket.emit('status', 'Listening...')
 
-    // Clear pending action after successful response
-    session.pendingWorkspaceAction = null
-    console.log('✅ Cleared pendingWorkspaceAction for session:', actualSessionId)
+    // Don't clear pendingWorkspaceAction immediately — the n8n agent may send
+    // multiple responses (status updates + final result). The periodic cleanup
+    // timer already clears stale pending actions after 30s.
+    console.log('✅ Voice response delivered for session:', actualSessionId)
 
   } catch (error) {
     console.error('❌ Error handling n8n response:', error)
@@ -895,7 +894,7 @@ async function handleUserMessage(socket, session, userMessage, pipeline = null) 
           }
 
           // Send webhook to n8n (async - don't wait for result)
-          session.webhook.sendGoogleWorkspaceAction(args, session.userId || socket.id)
+          session.webhook.sendGoogleWorkspaceAction(args, socket.id, session.userId || socket.id)
             .then(() => console.log('✅ Google Workspace action sent to n8n'))
             .catch(err => console.error('❌ Failed to send to n8n:', err))
 

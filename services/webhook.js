@@ -46,13 +46,13 @@ export class WebhookService {
     }
   }
 
-  async sendGoogleWorkspaceAction(actionData, sessionId) {
+  async sendGoogleWorkspaceAction(actionData, socketId, userId) {
     try {
       console.log('📤 Sending Google Workspace action to n8n:', actionData)
 
       const response = await axios.post(this.googleWorkspaceWebhookUrl, {
-        sessionId: sessionId,  // Keep for backward compatibility
-        userId: sessionId,     // Explicit userId field (will be Supabase UUID when authenticated)
+        sessionId: socketId,   // Socket ID for routing responses back
+        userId: userId,        // Supabase UUID for MCP tool authentication (will be Supabase UUID when authenticated)
         action: actionData.action,
         request: actionData.request,
         timestamp: new Date().toISOString()
