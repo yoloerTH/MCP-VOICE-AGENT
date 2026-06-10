@@ -34,18 +34,20 @@ for (const path of greetingPaths) {
 const app = express()
 const httpServer = createServer(app)
 
+// Single source of truth for allowed origins (shared by Express + Socket.io)
+const allowedOrigins = [
+  'https://naurra.ai',
+  'https://www.naurra.ai',
+  'https://googleassistantai.netlify.app',
+  'https://voicecallai.netlify.app',
+  'https://voiceagent-backend-production-b679.up.railway.app',
+  'http://localhost:5173',
+  'http://localhost:3000'
+]
+
 // Configure CORS for Socket.io and Express
 const corsOptions = {
   origin: function (origin, callback) {
-    const allowedOrigins = [
-      'https://naurra.ai',
-      'https://www.naurra.ai',
-      'https://googleassistantai.netlify.app',
-      'https://voicecallai.netlify.app',
-      'https://voiceagent-backend-production-b679.up.railway.app',
-      'http://localhost:5173',
-      'http://localhost:3000'
-    ]
     // Allow requests with no origin (like mobile apps or curl requests)
     if (!origin) return callback(null, true)
     if (allowedOrigins.indexOf(origin) !== -1) {
@@ -64,13 +66,7 @@ const corsOptions = {
 
 const io = new Server(httpServer, {
   cors: {
-    origin: [
-      'https://googleassistantai.netlify.app',
-      'https://voicecallai.netlify.app',
-      'https://voiceagent-backend-production-b679.up.railway.app',
-      'http://localhost:5173',
-      'http://localhost:3000'
-    ],
+    origin: allowedOrigins,
     methods: ['GET', 'POST'],
     credentials: true
   },
@@ -1037,6 +1033,6 @@ httpServer.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`)
   console.log(`📡 WebSocket server ready`)
   console.log(`🤖 LLM Provider: ${process.env.LLM_PROVIDER || 'openai'}`)
-  console.log(`🌐 CORS enabled for: https://voicecallai.netlify.app, https://voiceagent-backend-production-b679.up.railway.app, http://localhost:5173, http://localhost:3000`)
+  console.log(`🌐 CORS enabled for: ${allowedOrigins.join(', ')}`)
   console.log(`✅ Server ready to accept connections`)
 })
